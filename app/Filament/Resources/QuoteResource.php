@@ -918,10 +918,16 @@ class QuoteResource extends Resource
                     EditAction::make()
                         ->icon('heroicon-o-pencil-square')
                         ->color('warning'),
-                    Action::make('download_pdf')
-                        ->label('📄 Descargar PDF')
+                    Action::make('download_pdf_new')
+                        ->label('📄 Descargar PDF (Nuevo)')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('success')
+                        ->url(fn ($record) => route('quotes.download.pdf.new', $record))
+                        ->openUrlInNewTab(),
+                    Action::make('download_pdf_old')
+                        ->label('📄 Descargar PDF (Antiguo)')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('gray')
                         ->url(fn ($record) => route('quotes.download.pdf', $record))
                         ->openUrlInNewTab(),
                     DeleteAction::make()
