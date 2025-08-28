@@ -11,8 +11,6 @@ class CreateQuote extends CreateRecord
 
         protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Generar número de cotización automático usando el método del modelo
-        $data['quote_number'] = \App\Models\Quote::generateQuoteNumber();
         $data['created_by'] = auth()->id();
 
         return $data;

@@ -267,15 +267,6 @@ class QuoteResource extends Resource
                                                     ->dehydrated(false)
                                                     ->placeholder('Se generará automáticamente')
                                                     ->helperText('Este número se asigna automáticamente al guardar')
-                                                    ->rules([
-                                                        function () {
-                                                            return function (string $attribute, $value, \Closure $fail) {
-                                                                if ($value && \App\Models\Quote::where('quote_number', $value)->exists()) {
-                                                                    $fail('Este número de cotización ya existe.');
-                                                                }
-                                                            };
-                                                        },
-                                                    ])
                                                     ->columnSpan(1),
 
                                                 Forms\Components\Select::make('version')
@@ -469,7 +460,7 @@ class QuoteResource extends Resource
                                                                     'quantity_updated' => $state,
                                                                     'timestamp' => now()
                                                                 ]);
-
+                                                                
                                                                                                                                 // Llamar al método centralizado de cálculo
                                                                 self::calculateAndUpdateTotals($set, $get, $component);
                                                             }),
@@ -502,7 +493,7 @@ class QuoteResource extends Resource
                                                                     'unit_price_updated' => $state,
                                                                     'timestamp' => now()
                                                                 ]);
-
+                                                                
                                                                                                                                 // Llamar al método centralizado de cálculo
                                                                 self::calculateAndUpdateTotals($set, $get, $component);
                                                             }),
@@ -918,18 +909,6 @@ class QuoteResource extends Resource
                     EditAction::make()
                         ->icon('heroicon-o-pencil-square')
                         ->color('warning'),
-                    Action::make('download_pdf_new')
-                        ->label('📄 Descargar PDF (Nuevo)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('success')
-                        ->url(fn ($record) => route('quotes.download.pdf.new', $record))
-                        ->openUrlInNewTab(),
-                    Action::make('download_pdf_old')
-                        ->label('📄 Descargar PDF (Antiguo)')
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->color('gray')
-                        ->url(fn ($record) => route('quotes.download.pdf', $record))
-                        ->openUrlInNewTab(),
                     DeleteAction::make()
                         ->icon('heroicon-o-trash')
                         ->color('danger'),
