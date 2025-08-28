@@ -9,3 +9,6 @@ Route::get('/', function () {
 
 Route::get('/quotes/{quote}/download-pdf', [QuoteController::class, 'downloadPdf'])
     ->name('quotes.download.pdf');
+
+Route::get('/quotes/test-pdf', [QuoteController::class, 'testPdf'])
+    ->name('quotes.test.pdf');

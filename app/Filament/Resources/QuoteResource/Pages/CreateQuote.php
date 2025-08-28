@@ -9,19 +9,12 @@ class CreateQuote extends CreateRecord
 {
     protected static string $resource = QuoteResource::class;
 
-    protected function mutateFormDataBeforeCreate(array $data): array
+        protected function mutateFormDataBeforeCreate(array $data): array
     {
-        // Generar número de cotización automático
-        $year = date('Y');
-        $lastQuote = \App\Models\Quote::whereYear('created_at', $year)
-            ->orderBy('id', 'desc')
-            ->first();
-        
-        $nextNumber = $lastQuote ? (int)substr($lastQuote->quote_number, -4) + 1 : 1;
-        $data['quote_number'] = 'COT-' . $year . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
-        
+        // Generar número de cotización automático usando el método del modelo
+        $data['quote_number'] = \App\Models\Quote::generateQuoteNumber();
         $data['created_by'] = auth()->id();
-        
+
         return $data;
     }
 }

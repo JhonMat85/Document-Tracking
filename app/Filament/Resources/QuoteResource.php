@@ -33,10 +33,208 @@ use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Support\Facades\Log;
 
 class QuoteResource extends Resource
 {
     protected static ?string $model = Quote::class;
+
+    /**
+     * Método centralizado para calcular y actualizar montos desde el repeater
+     */
+    private static function calculateAndUpdateTotals(Set $set, Get $get, $component = null): void
+    {
+        Log::info('🔄 CÁLCULO CENTRALIZADO - Inicio', [
+            'timestamp' => now(),
+            'component_type' => $component ? get_class($component) : 'direct_call'
+        ]);
+
+        // Método 1: Intentar obtener datos del repeater padre
+        $details = [];
+
+        try {
+            if ($component instanceof \Filament\Forms\Components\Repeater) {
+                // Si el componente es el repeater directamente
+                $rawDetails = $component->getState() ?? [];
+            } else {
+                // Si es un campo dentro del repeater, obtenemos el estado del repeater padre
+                $repeaterComponent = $component->getContainer()->getParentComponent();
+                if ($repeaterComponent instanceof \Filament\Forms\Components\Repeater) {
+                    $rawDetails = $repeaterComponent->getState() ?? [];
+                } else {
+                    // Último recurso: buscar en el formulario completo
+                    $allData = $get('../../') ?? [];
+                    $rawDetails = $allData['details'] ?? [];
+                }
+            }
+            Log::info('✅ Método 1 - REPEATER COMPONENT exitoso', [
+                'raw_details_type' => gettype($rawDetails),
+                'raw_details' => $rawDetails,
+                'method' => 'repeater_component_state'
+            ]);
+
+            // Normalizar datos - asegurar que sea un array de items
+            if (is_array($rawDetails) && !empty($rawDetails)) {
+                // Verificar si es un array de items del repeater (cada elemento tiene quantity/unit_price)
+                $isRepeaterItems = false;
+                foreach ($rawDetails as $key => $item) {
+                    if (is_array($item) && (isset($item['quantity']) || isset($item['unit_price']))) {
+                        $isRepeaterItems = true;
+                        break;
+                    }
+                }
+
+                if ($isRepeaterItems) {
+                    // Es un array de items del repeater, usar directamente
+                    $details = array_values($rawDetails);
+                } elseif (isset($rawDetails['quantity']) || isset($rawDetails['unit_price'])) {
+                    // Es un solo item
+                    $details = [$rawDetails];
+                } else {
+                    // Puede ser datos del formulario completo, buscar el campo details
+                    if (isset($rawDetails['details'])) {
+                        $repeaterData = $rawDetails['details'];
+                        if (is_array($repeaterData)) {
+                            $details = array_values($repeaterData);
+                        }
+                    } else {
+                        $details = [];
+                    }
+                }
+            } elseif (is_object($rawDetails)) {
+                // Si es un objeto, convertirlo a array
+                $rawDetailsArray = (array) $rawDetails;
+                if (isset($rawDetailsArray['quantity']) || isset($rawDetailsArray['unit_price'])) {
+                    $details = [$rawDetailsArray];
+                } else {
+                    $details = array_values($rawDetailsArray);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('⚠️ Método 1 - REPEATER COMPONENT falló', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        // Método 2: Si el método 1 falla, usar path directo
+        if (empty($details)) {
+            try {
+                $rawDetails = $get('details') ?? [];
+                Log::info('✅ Método 2 - PATH DIRECTO exitoso', [
+                    'raw_details_type' => gettype($rawDetails),
+                    'raw_details' => $rawDetails,
+                    'method' => 'get_details_direct'
+                ]);
+
+                // Normalizar datos
+                if (is_array($rawDetails) && !empty($rawDetails)) {
+                    if (isset($rawDetails['quantity']) || isset($rawDetails['unit_price'])) {
+                        $details = [$rawDetails];
+                    } else {
+                        $details = array_values($rawDetails);
+                    }
+                } elseif (is_object($rawDetails)) {
+                    $rawDetailsArray = (array) $rawDetails;
+                    if (isset($rawDetailsArray['quantity']) || isset($rawDetailsArray['unit_price'])) {
+                        $details = [$rawDetailsArray];
+                    } else {
+                        $details = array_values($rawDetailsArray);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::warning('⚠️ Método 2 - PATH DIRECTO falló', [
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        // Método 3: Si ambos fallan, usar el estado del formulario completo
+        if (empty($details)) {
+            try {
+                $allData = $get('../../') ?? [];
+                $rawDetails = $allData['details'] ?? [];
+                Log::info('✅ Método 3 - FORMULARIO COMPLETO exitoso', [
+                    'raw_details_type' => gettype($rawDetails),
+                    'raw_details' => $rawDetails,
+                    'method' => 'full_form_data'
+                ]);
+
+                // Normalizar datos
+                if (is_array($rawDetails) && !empty($rawDetails)) {
+                    if (isset($rawDetails['quantity']) || isset($rawDetails['unit_price'])) {
+                        $details = [$rawDetails];
+                    } else {
+                        $details = array_values($rawDetails);
+                    }
+                } elseif (is_object($rawDetails)) {
+                    $rawDetailsArray = (array) $rawDetails;
+                    if (isset($rawDetailsArray['quantity']) || isset($rawDetailsArray['unit_price'])) {
+                        $details = [$rawDetailsArray];
+                    } else {
+                        $details = array_values($rawDetailsArray);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('❌ Método 3 - FORMULARIO COMPLETO falló', [
+                    'error' => $e->getMessage()
+                ]);
+                $details = [];
+            }
+        }
+
+        Log::info('📋 DETAILS FINALES OBTENIDOS', [
+            'total_items' => count($details),
+            'details_data' => $details
+        ]);
+
+        $total = 0;
+        foreach ($details as $index => $item) {
+            // Asegurar que tenemos un array, no un objeto
+            if (is_object($item)) {
+                $item = (array) $item;
+            }
+
+            $qty = (float)($item['quantity'] ?? 0);
+            $price = (float)($item['unit_price'] ?? 0);
+            $subtotal_item = $qty * $price;
+            $total += $subtotal_item;
+
+            Log::info("📊 ITEM #{$index} CALCULADO", [
+                'quantity' => $qty,
+                'unit_price' => $price,
+                'item_subtotal' => $subtotal_item,
+                'running_total' => $total
+            ]);
+        }
+
+        Log::info('💰 SUBTOTAL CALCULADO', [
+            'total_before_format' => $total,
+            'total_formatted' => number_format($total, 2, '.', '')
+        ]);
+
+        // Actualizar campos usando navegación hacia el formulario padre
+        $set('../../subtotal', number_format($total, 2, '.', ''));
+
+        // Recalcular impuestos
+        $taxRate = (float)($get('../../tax_percentage') ?? 18);
+        $tax = $total * $taxRate / 100;
+        $finalTotal = $total + $tax;
+
+        Log::info('🧾 IMPUESTOS CALCULADOS', [
+            'tax_rate' => $taxRate,
+            'tax_amount' => $tax,
+            'final_total' => $finalTotal
+        ]);
+
+        $set('../../tax_amount', number_format($tax, 2, '.', ''));
+        $set('../../total', number_format($finalTotal, 2, '.', ''));
+
+        Log::info('✅ CÁLCULO COMPLETADO - Campos actualizados', [
+            'subtotal_set' => number_format($total, 2, '.', ''),
+            'tax_amount_set' => number_format($tax, 2, '.', ''),
+            'total_set' => number_format($finalTotal, 2, '.', '')
+        ]);
+    }
 
     protected static string | BackedEnum | null $navigationIcon = 'heroicon-o-calculator';
 
@@ -56,7 +254,7 @@ class QuoteResource extends Resource
             ->components([
                 Tabs::make('quote_tabs')
                     ->tabs([
-                        Tab::make('📋 Información General')
+                        Tab::make('📋 General')
                             ->icon('heroicon-o-document-text')
                             ->schema([
                                 Section::make()
@@ -69,6 +267,15 @@ class QuoteResource extends Resource
                                                     ->dehydrated(false)
                                                     ->placeholder('Se generará automáticamente')
                                                     ->helperText('Este número se asigna automáticamente al guardar')
+                                                    ->rules([
+                                                        function () {
+                                                            return function (string $attribute, $value, \Closure $fail) {
+                                                                if ($value && \App\Models\Quote::where('quote_number', $value)->exists()) {
+                                                                    $fail('Este número de cotización ya existe.');
+                                                                }
+                                                            };
+                                                        },
+                                                    ])
                                                     ->columnSpan(1),
 
                                                 Forms\Components\Select::make('version')
@@ -82,7 +289,7 @@ class QuoteResource extends Resource
                                                     ])
                                                     ->default(1)
                                                     ->required()
-                                                    ->helperText('Versión de la cotización (la primera siempre es 1)')
+                                                    ->helperText('Versión (primera siempre es 1)')
                                                     ->columnSpan(1),
                                             ]),
 
@@ -128,30 +335,30 @@ class QuoteResource extends Resource
                                     ->columnSpan('full'),
                             ]),
 
-                        Tab::make('📝 Detalles del Servicio')
+                        Tab::make('📝 Servicio')
                             ->icon('heroicon-o-clipboard-document-list')
                             ->schema([
-                                Section::make('Descripción del Servicio')
-                                    ->description('Detalla el servicio a cotizar')
+                                Section::make('Servicio')
+                                    ->description('Describe el servicio')
                                     ->icon('heroicon-o-document-text')
                                     ->schema([
                                         Forms\Components\Textarea::make('service_description')
-                                            ->label('📋 Descripción del Servicio')
+                                            ->label('📋 Descripción')
                                             ->required()
                                             ->rows(4)
-                                            ->placeholder('Describe detalladamente el servicio que se está cotizando...')
-                                            ->helperText('Proporciona una descripción clara y completa del servicio')
+                                            ->placeholder('Describe el servicio...')
+                                            ->helperText('Descripción clara del servicio')
                                             ->columnSpanFull(),
                                     ]),
 
                                 Grid::make(2)
                                     ->schema([
                                         Section::make('Direcciones')
-                                            ->description('Direcciones de recojo y entrega')
+                                            ->description('Direcciones de recojo/entrega')
                                             ->icon('heroicon-o-map-pin')
                                             ->schema([
                                                 Forms\Components\Textarea::make('pickup_address')
-                                                    ->label('📍 Dirección de Recojo')
+                                                    ->label('📍 Dirección Recojo')
                                                     ->required()
                                                     ->rows(3)
                                                     ->placeholder('Dirección completa de recojo...')
@@ -159,7 +366,7 @@ class QuoteResource extends Resource
                                                     ->columnSpanFull(),
 
                                                 Forms\Components\Textarea::make('delivery_address')
-                                                    ->label('📦 Dirección de Entrega')
+                                                    ->label('📦 Dirección Entrega')
                                                     ->required()
                                                     ->rows(3)
                                                     ->placeholder('Dirección completa de entrega...')
@@ -174,24 +381,24 @@ class QuoteResource extends Resource
                             ->icon('heroicon-o-calendar-days')
                             ->schema([
                                 Section::make('Fechas de Servicio')
-                                    ->description('Planificación temporal del servicio')
+                                    ->description('Planificación temporal')
                                     ->icon('heroicon-o-calendar')
                                     ->schema([
                                         Grid::make(3)
                                             ->schema([
                                                 Forms\Components\DateTimePicker::make('service_start_date')
-                                                    ->label('🏁 Inicio Planificado')
+                                                    ->label('🏁 Inicio')
                                                     ->required()
-                                                    ->helperText('Fecha y hora de inicio del servicio')
+                                                    ->helperText('Fecha y hora de inicio')
                                                     ->columnSpan(1),
 
                                                 Forms\Components\DateTimePicker::make('service_end_date')
-                                                    ->label('🏁 Fin Planificado')
-                                                    ->helperText('Fecha y hora de finalización del servicio')
+                                                    ->label('🏁 Fin')
+                                                    ->helperText('Fecha y hora de finalización')
                                                     ->columnSpan(1),
 
                                                 Forms\Components\DateTimePicker::make('generation_date')
-                                                    ->label('🖨️ Fecha de Generación')
+                                                    ->label('🖨️ Generación')
                                                     ->default(now())
                                                     ->required()
                                                     ->helperText('Fecha de creación de la cotización')
@@ -206,28 +413,38 @@ class QuoteResource extends Resource
                                                     ->columnSpan(1),
 
                                                 Forms\Components\DateTimePicker::make('response_date')
-                                                    ->label('📥 Fecha de Respuesta')
-                                                    ->helperText('Cuándo se recibió respuesta del cliente')
+                                                    ->label('📥 Respuesta')
+                                                    ->helperText('Respuesta del cliente')
                                                     ->columnSpan(1),
 
                                                 Forms\Components\DateTimePicker::make('expiration_date')
-                                                    ->label('⏰ Fecha de Vencimiento')
-                                                    ->helperText('Fecha límite para aceptar la cotización')
+                                                    ->label('⏰ Vencimiento')
+                                                    ->helperText('Fecha límite de aceptación')
                                                     ->columnSpan(1),
                                             ]),
                                     ]),
                             ]),
 
-                        Tab::make('🧮 Detalles de Items')
+                        Tab::make('🧮 Items')
                             ->icon('heroicon-o-list-bullet')
                             ->schema([
-                                Section::make('Items de la Cotización')
-                                    ->description('Agrega los items y servicios incluidos en esta cotización')
+                                Section::make('Items')
+                                    ->description('Agrega los items')
                                     ->icon('heroicon-o-shopping-bag')
                                     ->schema([
                                         Forms\Components\Repeater::make('details')
-                                            ->label('📋 Items de la Cotización')
+                                            ->label('📋 Items')
                                             ->relationship()
+                                            ->live()
+                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
+                                                Log::info('🔄 REPEATER UPDATED - Cambio detectado en items', [
+                                                    'total_items' => count($state ?? []),
+                                                    'timestamp' => now()
+                                                ]);
+
+                                                // Llamar al método centralizado de cálculo
+                                                self::calculateAndUpdateTotals($set, $get, $component);
+                                            })
                                             ->schema([
                                                 Grid::make(4)
                                                     ->schema([
@@ -247,28 +464,14 @@ class QuoteResource extends Resource
                                                             ->minValue(1)
                                                             ->columnSpan(1)
                                                             ->live(onBlur: true)
-                                                            ->afterStateUpdated(function (Set $set, Get $get) {
-                                                                // SOLUTION KISS: Obtener datos del formulario completo y calcular suma
-                                                                $formData = $get('../../') ?? []; // Navegar hacia el formulario principal
-                                                                $details = $formData['details'] ?? [];
-                                                                
-                                                                $total = 0;
-                                                                foreach ($details as $item) {
-                                                                    $qty = (float)($item['quantity'] ?? 0);
-                                                                    $price = (float)($item['unit_price'] ?? 0);
-                                                                    $total += $qty * $price;
-                                                                }
-                                                                
-                                                                // Actualizar campos del formulario principal usando '../'
-                                                                $set('../subtotal', number_format($total, 2, '.', ''));
-                                                                
-                                                                // Recalcular impuestos desde formulario principal
-                                                                $taxRate = (float)($get('../tax_percentage') ?? 18);
-                                                                $tax = $total * $taxRate / 100;
-                                                                $finalTotal = $total + $tax;
-                                                                
-                                                                $set('../tax_amount', number_format($tax, 2, '.', ''));
-                                                                $set('../total', number_format($finalTotal, 2, '.', ''));
+                                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
+                                                                Log::info('🔢 QUANTITY UPDATED - Inicio del cálculo', [
+                                                                    'quantity_updated' => $state,
+                                                                    'timestamp' => now()
+                                                                ]);
+
+                                                                                                                                // Llamar al método centralizado de cálculo
+                                                                self::calculateAndUpdateTotals($set, $get, $component);
                                                             }),
 
                                                         Forms\Components\Select::make('unit_of_measure')
@@ -294,36 +497,22 @@ class QuoteResource extends Resource
                                                             ->step(0.01)
                                                             ->columnSpan(1)
                                                             ->live(onBlur: true)
-                                                            ->afterStateUpdated(function (Set $set, Get $get) {
-                                                                // SOLUTION KISS: Obtener datos del formulario completo y calcular suma
-                                                                $formData = $get('../../') ?? []; // Navegar hacia el formulario principal
-                                                                $details = $formData['details'] ?? [];
-                                                                
-                                                                $total = 0;
-                                                                foreach ($details as $item) {
-                                                                    $qty = (float)($item['quantity'] ?? 0);
-                                                                    $price = (float)($item['unit_price'] ?? 0);
-                                                                    $total += $qty * $price;
-                                                                }
-                                                                
-                                                                // Actualizar campos del formulario principal usando '../'
-                                                                $set('../subtotal', number_format($total, 2, '.', ''));
-                                                                
-                                                                // Recalcular impuestos desde formulario principal
-                                                                $taxRate = (float)($get('../tax_percentage') ?? 18);
-                                                                $tax = $total * $taxRate / 100;
-                                                                $finalTotal = $total + $tax;
-                                                                
-                                                                $set('../tax_amount', number_format($tax, 2, '.', ''));
-                                                                $set('../total', number_format($finalTotal, 2, '.', ''));
+                                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
+                                                                Log::info('💰 UNIT_PRICE UPDATED - Inicio del cálculo', [
+                                                                    'unit_price_updated' => $state,
+                                                                    'timestamp' => now()
+                                                                ]);
+
+                                                                                                                                // Llamar al método centralizado de cálculo
+                                                                self::calculateAndUpdateTotals($set, $get, $component);
                                                             }),
                                                     ]),
 
                                                 Forms\Components\Textarea::make('item_description')
-                                                    ->label('📝 Descripción del Item')
+                                                    ->label('📝 Descripción Item')
                                                     ->required()
                                                     ->rows(3)
-                                                    ->placeholder('Describe detalladamente el item o servicio...')
+                                                    ->placeholder('Describe el item...')
                                                     ->columnSpanFull(),
 
                                                 Forms\Components\Textarea::make('item_notes')
@@ -336,7 +525,7 @@ class QuoteResource extends Resource
                                             ->reorderable()
                                             ->collapsible()
                                             ->cloneable()
-                                            ->addActionLabel('➕ Agregar Item')
+                                            ->addActionLabel('➕ Agregar')
                                             ->defaultItems(1)
                                             ->minItems(1)
                                             ->maxItems(20)
@@ -348,7 +537,7 @@ class QuoteResource extends Resource
                             ->icon('heroicon-o-currency-dollar')
                             ->schema([
                                 Section::make('Cálculo de Montos')
-                                    ->description('Desglose financiero calculado automáticamente desde los items')
+                                    ->description('Desglose financiero automático')
                                     ->icon('heroicon-o-calculator')
                                     ->schema([
                                         Grid::make(3)
@@ -372,14 +561,34 @@ class QuoteResource extends Resource
                                                     ->helperText('Porcentaje de impuesto aplicable')
                                                     ->columnSpan(1)
                                                     ->live(onBlur: true)
-                                                    ->afterStateUpdated(function (Set $set, Get $get) {
+                                                    ->afterStateUpdated(function (Set $set, Get $get, $state) {
+                                                        Log::info('📈 TAX_PERCENTAGE UPDATED - Inicio recalculo', [
+                                                            'tax_percentage_updated' => $state,
+                                                            'timestamp' => now()
+                                                        ]);
+                                                        
                                                         $subtotal = (float) ($get('subtotal') ?? 0);
                                                         $taxPercentage = $get('tax_percentage') ?? 18;
+                                                        
+                                                        Log::info('📊 VALORES OBTENIDOS PARA RECALCULO', [
+                                                            'subtotal_from_form' => $subtotal,
+                                                            'tax_percentage_from_form' => $taxPercentage
+                                                        ]);
+                                                        
                                                         $taxAmount = $subtotal * $taxPercentage / 100;
                                                         $total = $subtotal + $taxAmount;
                                                         
+                                                        Log::info('🧾 RECALCULO DE IMPUESTOS COMPLETADO', [
+                                                            'tax_amount_calculated' => $taxAmount,
+                                                            'new_total' => $total,
+                                                            'tax_amount_formatted' => number_format($taxAmount, 2, '.', ''),
+                                                            'total_formatted' => number_format($total, 2, '.', '')
+                                                        ]);
+                                                        
                                                         $set('tax_amount', number_format($taxAmount, 2, '.', ''));
                                                         $set('total', number_format($total, 2, '.', ''));
+                                                        
+                                                        Log::info('✅ RECALCULO COMPLETADO - Campos de impuestos actualizados');
                                                     }),
 
                                                 Forms\Components\TextInput::make('tax_amount')
@@ -431,15 +640,15 @@ class QuoteResource extends Resource
                                     ]),
                             ]),
 
-                        Tab::make('📎 Documentos')
+                        Tab::make('📎 Docs')
                             ->icon('heroicon-o-paper-clip')
                             ->schema([
                                 Section::make('Archivos Adjuntos')
-                                    ->description('Sube documentos relacionados con esta cotización')
+                                    ->description('Sube documentos relacionados')
                                     ->icon('heroicon-o-document-arrow-up')
                                     ->schema([
                                         Forms\Components\FileUpload::make('attachment_files')
-                                            ->label('📄 Documentos de la Cotización')
+                                            ->label('📄 Documentos')
                                             ->multiple()
                                             ->acceptedFileTypes(['application/pdf', 'image/png', 'image/jpeg', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
                                             ->disk('public')
@@ -448,19 +657,19 @@ class QuoteResource extends Resource
                                             ->panelLayout('grid')
                                             ->maxFiles(10)
                                             ->maxSize(15360) // 15MB
-                                            ->helperText('Formatos permitidos: PDF, PNG, JPG, DOC, DOCX. Máximo 10 archivos de 15MB cada uno.')
-                                            ->hint('Los documentos se almacenarán de forma segura y estarán disponibles para consulta.')
+                                            ->helperText('PDF, PNG, JPG, DOC, DOCX - máx. 10 archivos de 15MB')
+                                            ->hint('Documentos seguros y disponibles')
                                             ->hintIcon('heroicon-o-information-circle')
                                             ->columnSpanFull()
                                             ->storeFiles(false), // No almacenar automáticamente
                                     ]),
                             ]),
 
-                        Tab::make('🚚 Información de Transporte')
+                        Tab::make('🚚 Transporte')
                             ->icon('heroicon-o-truck')
                             ->schema([
-                                Section::make('Detalles de Transporte')
-                                    ->description('Información del vehículo y conductor para el servicio')
+                                Section::make('Transporte')
+                                    ->description('Vehículo y conductor')
                                     ->icon('heroicon-o-identification')
                                     ->schema([
                                         Fieldset::make('Conductor y Vehículo')
@@ -513,7 +722,7 @@ class QuoteResource extends Resource
                                                         Forms\Components\Textarea::make('transport_notes')
                                                             ->label('📝 Notas de Transporte')
                                                             ->rows(3)
-                                                            ->placeholder('Información adicional sobre el transporte...')
+                                                            ->placeholder('Información adicional...')
                                                             ->columnSpan(1),
                                                     ]),
                                             ])
@@ -524,8 +733,8 @@ class QuoteResource extends Resource
                         Tab::make('📊 Estado y Notas')
                             ->icon('heroicon-o-chat-bubble-left-right')
                             ->schema([
-                                Section::make('Estado y Observaciones')
-                                    ->description('Gestiona el estado de la cotización y agrega comentarios')
+                                Section::make('Estado')
+                                    ->description('Estado y comentarios')
                                     ->icon('heroicon-o-clipboard-document-check')
                                     ->schema([
                                         Grid::make(2)
@@ -556,8 +765,8 @@ class QuoteResource extends Resource
                                         Forms\Components\Textarea::make('notes')
                                             ->label('📝 Notas Adicionales')
                                             ->rows(4)
-                                            ->placeholder('Agrega cualquier observación, comentario o información adicional relevante...')
-                                            ->helperText('Información adicional que pueda ser útil para el procesamiento de la cotización')
+                                            ->placeholder('Observaciones adicionales...')
+                                            ->helperText('Información adicional útil')
                                             ->columnSpanFull(),
                                     ]),
                             ]),
