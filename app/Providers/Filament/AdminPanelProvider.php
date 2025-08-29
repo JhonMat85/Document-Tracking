@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Resources\AttachmentResource;
 use App\Filament\Resources\ClientResource;
+use App\Filament\Resources\CompleteResource;
 use App\Filament\Resources\ExecutedServiceResource;
 use App\Filament\Resources\HesResource;
 use App\Filament\Resources\InvoiceResource;
@@ -12,12 +13,13 @@ use App\Filament\Resources\PurchaseOrderResource;
 use App\Filament\Resources\QuoteResource;
 use App\Filament\Resources\RequestResource;
 use App\Filament\Resources\RfqResource;
+use App\Filament\Resources\StatusResource;
 use App\Filament\Resources\SystemConfigurationResource;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
+use App\Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -61,6 +63,10 @@ class AdminPanelProvider extends PanelProvider
                 // 📁 GESTIÓN DOCUMENTAL (Archivos y documentos)
                 AttachmentResource::class,       // 10 - Documentos Adjuntos
                 
+                // 📊 REPORTES Y DASHBOARD (Informes y análisis)
+                CompleteResource::class,          // 05 - Dashboard Completo de Cotizaciones
+                StatusResource::class,            // 10 - Dashboard Estado de Documentos
+                
                 // ⚙️ ADMINISTRACIÓN (Configuración del sistema)
                 SystemConfigurationResource::class, // 10 - Configuraciones
             ])
@@ -70,8 +76,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                AccountWidget::class,
-                FilamentInfoWidget::class,
+                // Sin widgets globales - se manejan en cada página
             ])
             ->middleware([
                 EncryptCookies::class,

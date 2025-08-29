@@ -35,4 +35,3 @@ class QuoteController extends Controller
         ]);
     }
 }
-}
