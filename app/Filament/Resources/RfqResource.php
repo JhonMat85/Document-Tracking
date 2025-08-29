@@ -85,7 +85,7 @@ class RfqResource extends Resource
                                             ->schema([
                                                 Forms\Components\Select::make('request_id')
                                                     ->label('📝 Solicitud Asociada')
-                                                    ->options(Request::all()->pluck('request_number', 'id'))
+                                                    ->relationship('request', 'request_number')
                                                     ->searchable()
                                                     ->preload()
                                                     ->placeholder('Seleccionar solicitud existente (opcional)')

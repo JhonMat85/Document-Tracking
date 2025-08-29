@@ -172,11 +172,10 @@ class PurchaseOrderResource extends Resource
                                                 Select::make('currency')
                                                     ->label('💱 Moneda')
                                                     ->options([
+                                                        'PEN' => 'PEN - Soles Peruanos',
                                                         'USD' => 'USD - Dólar Americano',
-                                                        'CLP' => 'CLP - Peso Chileno',
-                                                        'EUR' => 'EUR - Euro',
                                                     ])
-                                                    ->default('USD')
+                                                    ->default('PEN')
                                                     ->required()
                                                     ->helperText('Moneda de la orden de compra'),
                                             ]),

@@ -20,6 +20,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Repeater; // Add this import
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -176,6 +177,57 @@ class ClientResource extends Resource
                                             ->helperText('Esta información será visible para todos los usuarios con acceso al cliente')
                                             ->columnSpanFull(),
                                     ]),
+                            ]),
+
+                        Tabs\Tab::make('👥 Áreas y Contactos')
+                            ->icon('heroicon-o-user-group')
+                            ->schema([
+                                Section::make('Áreas del Cliente')
+                                    ->description('Defina áreas/departamentos y sus contactos asociados')
+                                    ->icon('heroicon-o-folder')
+                                    ->schema([
+                                        Repeater::make('departments')
+                                            ->label(' ')
+                                            ->schema([
+                                                Grid::make(2)->schema([
+                                                    TextInput::make('name')
+                                                        ->label('Nombre del Área/Departamento')
+                                                        ->required()
+                                                        ->columnSpanFull(),
+                                                ]),
+                                                Repeater::make('contacts')
+                                                    ->label('Contactos')
+                                                    ->schema([
+                                                        Grid::make(2)->schema([
+                                                            TextInput::make('full_name')
+                                                                ->label('Nombre Completo')
+                                                                ->required()
+                                                                ->maxLength(255),
+
+                                                            TextInput::make('position')
+                                                                ->label('Cargo')
+                                                                ->maxLength(150),
+
+                                                            TextInput::make('phone')
+                                                                ->label('Teléfono')
+                                                                ->maxLength(50),
+
+                                                            TextInput::make('email')
+                                                                ->label('Email')
+                                                                ->email()
+                                                                ->maxLength(255),
+                                                        ])
+                                                    ])
+                                                    ->collapsible()
+                                                    ->defaultItems(1)
+                                                    ->minItems(1)
+                                                    ->maxItems(2)
+                                                    ->itemLabel(fn (array $state): ?string => $state['full_name'] ?? null)
+                                            ])
+                                            ->collapsible()
+                                            ->defaultItems(0)
+                                            ->itemLabel(fn (array $state): ?string => $state['name'] ?? null)
+                                    ])
                             ]),
                     ])
                     ->columnSpanFull()

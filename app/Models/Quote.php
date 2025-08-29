@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB; // Add this for database transactions
 
 class Quote extends Model
 {
@@ -17,7 +18,7 @@ class Quote extends Model
      * The attributes that are mass assignable.
      */
     protected $fillable = [
-        'quote_number',
+        'quote_number', // This will be generated automatically, but kept fillable for flexibility
         'request_id',
         'rfq_id',
         'destination_contact_id',
@@ -68,6 +69,55 @@ class Quote extends Model
         'response_date' => 'datetime',
         'expiration_date' => 'datetime',
     ];
+
+    /**
+     * The "booted" method of the model.
+     * Used to register model event listeners.
+     */
+    protected static function booted()
+    {
+        // Event listener for creating a new Quote
+        static::creating(function (Quote $quote) {
+            // Only generate quote_number if it's not already set
+            if (empty($quote->quote_number)) {
+                $quote->quote_number = self::generateQuoteNumber();
+            }
+        });
+    }
+
+    /**
+     * Generate a unique quote number.
+     * Format: Q-YYYY-XXXX (e.g., Q-2025-0001)
+     *
+     * @return string
+     */
+    private static function generateQuoteNumber(): string
+    {
+        $currentYear = now()->year;
+        $prefix = "Q-{$currentYear}-";
+
+        // Use a database transaction to ensure atomicity and prevent race conditions
+        return DB::transaction(function () use ($prefix, $currentYear) {
+            // Find the last quote number for the current year
+            // We use lockForUpdate to prevent race conditions in concurrent environments
+            $lastQuote = self::where('quote_number', 'like', "{$prefix}%")
+                ->orderBy('id', 'desc')
+                ->lockForUpdate() // Important for concurrency
+                ->first();
+
+            if ($lastQuote) {
+                // Extract the numeric part from the last quote number
+                $lastNumber = (int) str_replace($prefix, '', $lastQuote->quote_number);
+                $newNumber = $lastNumber + 1;
+            } else {
+                // If no quote exists for this year, start with 1
+                $newNumber = 1;
+            }
+
+            // Format the new number with leading zeros (e.g., 0001)
+            return $prefix . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+        });
+    }
 
     /**
      * Get the request for this quote.

@@ -292,6 +292,21 @@ class QuoteResource extends Resource
                                                     ->searchable()
                                                     ->preload()
                                                     ->required()
+                                                    ->live() // Make it reactive
+                                                    ->afterStateUpdated(function (Set $set, Get $get) {
+                                                        // Get the selected request ID
+                                                        $requestId = $get('request_id');
+                                                        
+                                                        if ($requestId) {
+                                                            // Load the request model
+                                                            $request = \App\Models\Request::find($requestId);
+                                                            
+                                                            if ($request && $request->contact_id) {
+                                                                // Set the destination_contact_id to the request's contact
+                                                                $set('destination_contact_id', $request->contact_id);
+                                                            }
+                                                        }
+                                                    })
                                                     ->helperText('Solicitud asociada a esta cotización')
                                                     ->columnSpan(1),
 
@@ -316,12 +331,68 @@ class QuoteResource extends Resource
 
                                                 Forms\Components\Select::make('destination_contact_id')
                                                     ->label('👤 Contacto Destino')
-                                                    ->relationship('destinationContact', 'full_name')
+                                                    ->options(function (Get $get) {
+                                                        $requestId = $get('request_id');
+                                                        
+                                                        if (!$requestId) {
+                                                            // If no request is selected, return an empty array or perhaps all active contacts
+                                                            // Returning empty is safer to avoid overwhelming the user
+                                                            return [];
+                                                        }
+                                                        
+                                                        $request = \App\Models\Request::find($requestId);
+                                                        
+                                                        if (!$request || !$request->client_id) {
+                                                            // If the request doesn't have a client, return empty
+                                                            return [];
+                                                        }
+                                                        
+                                                        // Return contacts for the request's client
+                                                        return \App\Models\ClientContact::where('client_id', $request->client_id)
+                                                            ->where('is_active', true)
+                                                            ->pluck('full_name', 'id');
+                                                    })
+                                                    ->live() // Make it reactive to changes in request_id
                                                     ->searchable()
                                                     ->preload()
+                                                    ->hidden() // <<-- Hide the field from the UI
                                                     ->helperText('Persona de contacto para esta cotización')
                                                     ->columnSpan(1),
                                             ]),
+                                            
+                                        // Informative section for the selected request's contact details
+                                        Section::make('Información del Contacto de la Solicitud')
+                                            ->description('Detalles del contacto asociado a la solicitud seleccionada')
+                                            ->icon('heroicon-o-user')
+                                            ->schema([
+                                                Forms\Components\Placeholder::make('contact_details')
+                                                    ->label('Contacto de la Solicitud')
+                                                    ->content(function (Get $get) {
+                                                        $requestId = $get('request_id');
+                                                        
+                                                        if (!$requestId) {
+                                                            return 'Por favor, seleccione una solicitud para ver los detalles del contacto.';
+                                                        }
+                                                        
+                                                        $request = \App\Models\Request::with('contact')->find($requestId);
+                                                        
+                                                        if (!$request || !$request->contact) {
+                                                            return 'La solicitud seleccionada no tiene un contacto asociado.';
+                                                        }
+                                                        
+                                                        $contact = $request->contact;
+                                                        
+                                                        return view('filament.forms.contact-details', [
+                                                            'name' => $contact->full_name,
+                                                            'position' => $contact->position ?? 'N/A',
+                                                            'phone' => $contact->phone ?? 'N/A',
+                                                            'email' => $contact->email ?? 'N/A',
+                                                        ]);
+                                                    })
+                                            ])
+                                            ->collapsible()
+                                            ->collapsed() // Start collapsed
+                                            ->visible(fn (Get $get) => $get('request_id')) // Only visible if a request is selected
                                     ])
                                     ->columnSpan('full'),
                             ]),
@@ -425,7 +496,7 @@ class QuoteResource extends Resource
                                     ->schema([
                                         Forms\Components\Repeater::make('details')
                                             ->label('📋 Items')
-                                            ->relationship()
+                                            ->relationship('details') // Especificar explícitamente el nombre de la relación
                                             ->live()
                                             ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
                                                 Log::info('🔄 REPEATER UPDATED - Cambio detectado en items', [

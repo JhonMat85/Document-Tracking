@@ -74,15 +74,6 @@ class RequestResource extends Resource
                                                     ->placeholder('Se generará automáticamente')
                                                     ->helperText('Este número se asigna automáticamente al guardar'),
 
-                                                TextInput::make('requesting_department')
-                                                    ->label('🏢 Área Requirente')
-                                                    ->maxLength(150)
-                                                    ->placeholder('Ej: Cardiología, Laboratorio, etc.')
-                                                    ->helperText('Departamento o área que solicita el servicio'),
-                                            ]),
-
-                                        Grid::make(1)
-                                            ->schema([
                                                 Select::make('client_id')
                                                     ->label('🏥 Cliente/Clínica')
                                                     ->relationship('client', 'business_name')
@@ -92,9 +83,12 @@ class RequestResource extends Resource
                                                     ->live()
                                                     ->afterStateUpdated(fn ($state, Set $set) => $set('contact_id', null))
                                                     ->helperText('Selecciona el cliente para esta solicitud'),
+                                            ]),
 
-                                                Select::make('contact_id')
-                                                    ->label('👤 Contacto')
+                                        Grid::make(1)
+                                            ->schema([
+                                                Select::make('requesting_department')
+                                                    ->label('🏢 Área Requirente')
                                                     ->options(function (Get $get) {
                                                         $clientId = $get('client_id');
                                                         if (!$clientId) {
@@ -102,8 +96,38 @@ class RequestResource extends Resource
                                                         }
                                                         return ClientContact::where('client_id', $clientId)
                                                             ->where('is_active', true)
-                                                            ->pluck('full_name', 'id');
+                                                            ->pluck('department') // Get the department column
+                                                            ->unique() // Get unique department names
+                                                            ->filter() // Remove null/empty values
+                                                            ->mapWithKeys(fn ($dept) => [$dept => $dept]) // Format for Select options
+                                                            ->toArray();
                                                     })
+                                                    ->live() // Make it reactive
+                                                    ->searchable()
+                                                    ->preload()
+                                                    ->helperText('Departamento o área que solicita el servicio'),
+
+                                                Select::make('contact_id')
+                                                    ->label('👤 Contacto')
+                                                    ->options(function (Get $get) {
+                                                        $clientId = $get('client_id');
+                                                        $department = $get('requesting_department');
+                                                        
+                                                        if (!$clientId) {
+                                                            return [];
+                                                        }
+                                                        
+                                                        $query = ClientContact::where('client_id', $clientId)
+                                                            ->where('is_active', true);
+                                                        
+                                                        // If a department is selected, filter by it
+                                                        if ($department) {
+                                                            $query->where('department', $department);
+                                                        }
+                                                        
+                                                        return $query->pluck('full_name', 'id');
+                                                    })
+                                                    ->live() // Make it reactive to changes in other fields
                                                     ->searchable()
                                                     ->preload()
                                                     ->helperText('Persona de contacto para esta solicitud'),
