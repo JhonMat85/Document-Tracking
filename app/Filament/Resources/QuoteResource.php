@@ -903,6 +903,17 @@ class QuoteResource extends Resource
             ->filtersLayout(Tables\Enums\FiltersLayout::AboveContentCollapsible)
             ->actions([
                 ActionGroup::make([
+                    Action::make('downloadPdf')
+                        ->label('Descargar PDF')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (Quote $record) {
+                            return redirect()->route('quotes.download.pdf', ['quote' => $record]);
+                        })
+                        ->requiresConfirmation()
+                        ->modalHeading('Descargar PDF')
+                        ->modalDescription('¿Está seguro de que desea generar y descargar el PDF de esta cotización?')
+                        ->modalSubmitActionLabel('Descargar'),
                     ViewAction::make()
                         ->icon('heroicon-o-eye')
                         ->color('info'),
