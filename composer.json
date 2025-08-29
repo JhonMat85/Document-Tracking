@@ -12,6 +12,7 @@
         "laravel/tinker": "^2.10.1",
         "mpdf/mpdf": "^8.2",
         "phpoffice/phpspreadsheet": "^5.0",
+        "resma/filament-awin-theme": "^1.0",
         "tecnickcom/tcpdf": "^6.10"
     },
     "require-dev": {
