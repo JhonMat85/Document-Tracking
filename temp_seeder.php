@@ -26,7 +26,7 @@ class SystemConfigurationSeeder extends Seeder
             ],
             [
                 'key' => 'company_logo',
-                'value' => 'logos/logo.jpg',
+                'value' => '',
                 'type' => 'string',
                 'description' => 'Logo de la empresa para cotizaciones (ruta del archivo)',
                 'is_editable' => true,

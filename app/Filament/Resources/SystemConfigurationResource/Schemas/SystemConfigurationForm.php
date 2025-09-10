@@ -6,13 +6,16 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\FileUpload;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Log;
 
 class SystemConfigurationForm
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema
+            ->statePath('data')
             ->components([
                 TextInput::make('key')
                     ->label('Clave')
@@ -20,7 +23,17 @@ class SystemConfigurationForm
                     
                 TextInput::make('value')
                     ->label('Valor')
-                    ->required(),
+                    ->required(fn ($get) => !in_array($get('key'), ['company_logo', 'bank_account_info']))
+                    ->hidden(fn ($get) => in_array($get('key'), ['company_logo', 'bank_account_info']))
+                    ->helperText(function ($get) {
+                        $key = $get('key');
+                        if ($key === 'company_logo') {
+                            return 'La ruta se actualiza automáticamente al subir el archivo';
+                        } elseif ($key === 'bank_account_info') {
+                            return 'El valor se actualiza automáticamente al editar el campo de información bancaria';
+                        }
+                        return 'Valor de la configuración';
+                    }),
                     
                 Select::make('type')
                     ->label('Tipo')
@@ -54,7 +67,58 @@ class SystemConfigurationForm
                 Textarea::make('description')
                     ->label('Descripción')
                     ->required(),
-                    
+
+                // Campo especial para logo de la empresa
+                FileUpload::make('logo_upload')
+                    ->label('Logo de la Empresa')
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/gif'])
+                    ->maxSize(2048) // 2MB
+                    ->directory('logos')
+                    ->visibility('public')
+                    ->imagePreviewHeight('150')
+                    ->helperText('Logo que se mostrará en las cotizaciones (JPG, PNG, GIF - máx. 2MB). La ruta se guarda automáticamente.')
+                    ->columnSpanFull()
+                    ->visible(fn ($get) => $get('key') === 'company_logo')
+                    ->afterStateUpdated(function ($state, $set, $get) {
+                        Log::info('LOGO UPLOAD DEBUG - afterStateUpdated called', [
+                            'state_type' => gettype($state),
+                            'state_value' => $state,
+                            'state_empty' => empty($state),
+                            'timestamp' => now()
+                        ]);
+
+                        if ($state && !empty($state)) {
+                            // Cuando se sube un archivo, actualizar el campo value con la ruta
+                            // FileUpload puede devolver un string (un archivo) o array (múltiples)
+                            $filePath = is_array($state) ? $state[0] : $state;
+
+                            Log::info('LOGO UPLOAD DEBUG - File path extracted', [
+                                'file_path' => $filePath,
+                                'is_array' => is_array($state),
+                                'array_count' => is_array($state) ? count($state) : 'N/A'
+                            ]);
+
+                            $set('value', $filePath);
+                        } elseif (empty($state)) {
+                            // Cuando se elimina el archivo, limpiar el campo value
+                            Log::info('LOGO UPLOAD DEBUG - File removed, clearing value');
+                            $set('value', '');
+                        }
+                    }),
+
+                // Campo especial para información bancaria
+                Textarea::make('bank_info_input')
+                    ->label('Información Bancaria')
+                    ->rows(4)
+                    ->placeholder('Cta. BCP  CUENTA CORRIENTE BCP.
+NRO. 193-2426603-0-40')
+                    ->helperText('Información bancaria que se mostrará en las cotizaciones')
+                    ->columnSpanFull()
+                    ->visible(fn ($get) => $get('key') === 'bank_account_info')
+                    ->afterStateUpdated(function ($state, $set) {
+                        $set('value', $state ?: '');
+                    }),
+
                 Toggle::make('is_editable')
                     ->label('Editable')
                     ->default(true),

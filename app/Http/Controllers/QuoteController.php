@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Quote;
+use App\Models\SystemConfiguration;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Mpdf\Mpdf;
 
 class QuoteController extends Controller
@@ -57,6 +59,11 @@ class QuoteController extends Controller
     {
         $client = $quote->request->client ?? null;
         $details = $quote->details ?? collect();
+
+        // Obtener configuraciones dinámicas del sistema
+        $companyName = SystemConfiguration::where('key', 'company_name')->first();
+        $companyLogo = SystemConfiguration::where('key', 'company_logo')->first();
+        $bankAccountInfo = SystemConfiguration::where('key', 'bank_account_info')->first();
         // $transport = $quote->transport ?? null; // No se usa en el formato solicitado
 
         // Calcular el número de filas de detalles que caben en una página aproximadamente
@@ -170,12 +177,10 @@ class QuoteController extends Controller
                 <tr>
                     <td class="logo-cell">
                         <!-- Logo de la empresa -->
-                        <!-- <img src="' . public_path("images/logo.png") . '" height="40"> -->
-                        <!-- Placeholder para el logo -->
-                        <div style="height: 40pt; border: 1pt dashed #ccc; text-align: center; line-height: 40pt; font-size: 6pt;">[Logo Empresa]</div>
+                        ' . ($companyLogo && $companyLogo->value ? '<img src="' . storage_path('app/public/' . $companyLogo->value) . '" height="40" style="max-width: 100%;">' : '<div style="height: 40pt; border: 1pt dashed #ccc; text-align: center; line-height: 40pt; font-size: 6pt;">[Logo Empresa]</div>') . '
                     </td>
                     <td class="title-cell bold">
-                        TRANSPORTE XPRESS S.A.C.<br>
+                        ' . htmlspecialchars($companyName ? $companyName->value : 'EMPRESA SIN CONFIGURAR') . '<br>
                         <span class="small-text">
                         TRANSPORTE DE CARGA, ALMACENAMIENTO, LOGISTICA Y PROYECTOS.<br>
                         Direccion: Calle Los Alamos Nro. 180 Urb. Santa Isabel - Ate - Lima.<br>
@@ -222,6 +227,22 @@ class QuoteController extends Controller
                 </tr>
                 <tr>
                     <td>' . nl2br(htmlspecialchars($quote->service_description)) . '</td>
+                </tr>
+            </table>
+
+            <!-- Service Details -->
+            <table>
+                <tr>
+                    <td style="width: 25%;"><b>Dirección Recojo:</b></td>
+                    <td style="width: 25%;">' . htmlspecialchars($quote->pickup_address ?? 'N/A') . '</td>
+                    <td style="width: 25%;"><b>Dirección Entrega:</b></td>
+                    <td style="width: 25%;">' . htmlspecialchars($quote->delivery_address ?? 'N/A') . '</td>
+                </tr>
+                <tr>
+                    <td><b>Fecha Inicio:</b></td>
+                    <td>' . ($quote->service_start_date ? date('d/m/Y', strtotime($quote->service_start_date)) : 'N/A') . '</td>
+                    <td><b>Fecha Fin:</b></td>
+                    <td>' . ($quote->service_end_date ? date('d/m/Y', strtotime($quote->service_end_date)) : 'N/A') . '</td>
                 </tr>
             </table>
 
@@ -291,13 +312,11 @@ class QuoteController extends Controller
                     <tr>
                         <td style="width: 50%;">
                             <b>Nro. de Cuenta:</b><br>
-                            BCP Soles: 191-234567890-0-12<br>
-                            CCI: 00219112345678901234<br>
-                            <!-- Interbank: ... -->
+                            ' . nl2br(htmlspecialchars($bankAccountInfo ? $bankAccountInfo->value : 'Información bancaria no configurada')) . '
                         </td>
                         <td style="width: 50%;">
                             <div class="signature-line">CLIENTE</div>
-                            <div class="signature-line">TRANSPORTE XPRESS S.A.C.</div>
+                            <div class="signature-line">' . htmlspecialchars($companyName ? $companyName->value : 'EMPRESA SIN CONFIGURAR') . '</div>
                         </td>
                     </tr>
                 </table>
@@ -307,7 +326,7 @@ class QuoteController extends Controller
         // Footer
         $html .= '
             <div class="footer">
-                TRANSPORTE XPRESS S.A.C. - Transporte de Carga, Almacenamiento, Logistica y Proyectos.<br>
+                ' . htmlspecialchars($companyName ? $companyName->value : 'EMPRESA SIN CONFIGURAR') . ' - Transporte de Carga, Almacenamiento, Logistica y Proyectos.<br>
                 Calle Los Alamos Nro. 180 Urb. Santa Isabel - Ate - Lima. Telefonos: 937403921 / 972161490<br>
                 Email: operaciones@transportexpsac.com
             </div>

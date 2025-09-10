@@ -73,22 +73,22 @@ class QuoteResource extends Resource
                 'method' => 'repeater_component_state'
             ]);
 
-            // Normalizar datos - asegurar que sea un array de items
+            // Normalizar datos - asegurar que sea un array de servicios
             if (is_array($rawDetails) && !empty($rawDetails)) {
-                // Verificar si es un array de items del repeater (cada elemento tiene quantity/unit_price)
-                $isRepeaterItems = false;
-                foreach ($rawDetails as $key => $item) {
-                    if (is_array($item) && (isset($item['quantity']) || isset($item['unit_price']))) {
-                        $isRepeaterItems = true;
+                // Verificar si es un array de servicios del repeater (cada elemento tiene quantity/unit_price)
+                $isRepeaterServices = false;
+                foreach ($rawDetails as $key => $service) {
+                    if (is_array($service) && (isset($service['quantity']) || isset($service['unit_price']))) {
+                        $isRepeaterServices = true;
                         break;
                     }
                 }
 
-                if ($isRepeaterItems) {
-                    // Es un array de items del repeater, usar directamente
+                if ($isRepeaterServices) {
+                    // Es un array de servicios del repeater, usar directamente
                     $details = array_values($rawDetails);
                 } elseif (isset($rawDetails['quantity']) || isset($rawDetails['unit_price'])) {
-                    // Es un solo item
+                    // Es un solo servicio
                     $details = [$rawDetails];
                 } else {
                     // Puede ser datos del formulario completo, buscar el campo details
@@ -182,27 +182,27 @@ class QuoteResource extends Resource
             }
         }
 
-        Log::info('📋 DETAILS FINALES OBTENIDOS', [
-            'total_items' => count($details),
-            'details_data' => $details
+        Log::info('📋 SERVICIOS FINALES OBTENIDOS', [
+            'total_servicios' => count($details),
+            'servicios_data' => $details
         ]);
 
         $total = 0;
-        foreach ($details as $index => $item) {
+        foreach ($details as $index => $service) {
             // Asegurar que tenemos un array, no un objeto
-            if (is_object($item)) {
-                $item = (array) $item;
+            if (is_object($service)) {
+                $service = (array) $service;
             }
 
-            $qty = (float)($item['quantity'] ?? 0);
-            $price = (float)($item['unit_price'] ?? 0);
-            $subtotal_item = $qty * $price;
-            $total += $subtotal_item;
+            $qty = (float)($service['quantity'] ?? 0);
+            $price = (float)($service['unit_price'] ?? 0);
+            $subtotal_service = $qty * $price;
+            $total += $subtotal_service;
 
-            Log::info("📊 ITEM #{$index} CALCULADO", [
+            Log::info("📊 SERVICIO #{$index} CALCULADO", [
                 'quantity' => $qty,
                 'unit_price' => $price,
-                'item_subtotal' => $subtotal_item,
+                'service_subtotal' => $subtotal_service,
                 'running_total' => $total
             ]);
         }
@@ -487,20 +487,20 @@ class QuoteResource extends Resource
                                     ]),
                             ]),
 
-                        Tab::make('🧮 Items')
+                        Tab::make('🧮 Servicios')
                             ->icon('heroicon-o-list-bullet')
                             ->schema([
-                                Section::make('Items')
-                                    ->description('Agrega los items')
+                                Section::make('Servicios')
+                                    ->description('Agrega los servicios')
                                     ->icon('heroicon-o-shopping-bag')
                                     ->schema([
                                         Forms\Components\Repeater::make('details')
-                                            ->label('📋 Items')
+                                            ->label('📋 Servicios')
                                             ->relationship('details') // Especificar explícitamente el nombre de la relación
                                             ->live()
                                             ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
-                                                Log::info('🔄 REPEATER UPDATED - Cambio detectado en items', [
-                                                    'total_items' => count($state ?? []),
+                                                Log::info('🔄 REPEATER UPDATED - Cambio detectado en servicios', [
+                                                    'total_servicios' => count($state ?? []),
                                                     'timestamp' => now()
                                                 ]);
 
@@ -571,16 +571,16 @@ class QuoteResource extends Resource
                                                     ]),
 
                                                 Forms\Components\Textarea::make('item_description')
-                                                    ->label('📝 Descripción Item')
+                                                    ->label('📝 Descripción del Servicio')
                                                     ->required()
                                                     ->rows(3)
-                                                    ->placeholder('Describe el item...')
+                                                    ->placeholder('Describe el servicio...')
                                                     ->columnSpanFull(),
 
                                                 Forms\Components\Textarea::make('item_notes')
-                                                    ->label('📋 Notas del Item')
+                                                    ->label('📋 Notas del Servicio')
                                                     ->rows(2)
-                                                    ->placeholder('Notas adicionales para este item...')
+                                                    ->placeholder('Notas adicionales para este servicio...')
                                                     ->columnSpanFull(),
                                             ])
                                             ->orderColumn('item_order')
@@ -609,7 +609,7 @@ class QuoteResource extends Resource
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Calculado automáticamente desde los items')
+                                                    ->helperText('Calculado automáticamente desde los servicios')
                                                     ->columnSpan(1)
                                                     ->default(0)
                                                     ->live(),
