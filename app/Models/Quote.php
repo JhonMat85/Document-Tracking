@@ -86,36 +86,43 @@ class Quote extends Model
     }
 
     /**
-     * Generate a unique quote number.
-     * Format: Q-YYYY-XXXX (e.g., Q-2025-0001)
+     * Generate a unique quote number using system configuration.
+     * Format: {PREFIX}-{NUMBER} (e.g., COT-401, COT-402)
      *
      * @return string
      */
     private static function generateQuoteNumber(): string
     {
-        $currentYear = now()->year;
-        $prefix = "Q-{$currentYear}-";
-
         // Use a database transaction to ensure atomicity and prevent race conditions
-        return DB::transaction(function () use ($prefix, $currentYear) {
-            // Find the last quote number for the current year
-            // We use lockForUpdate to prevent race conditions in concurrent environments
-            $lastQuote = self::where('quote_number', 'like', "{$prefix}%")
-                ->orderBy('id', 'desc')
+        return DB::transaction(function () {
+            // Get prefix from system configuration
+            $prefix = SystemConfiguration::where('key', 'quote_number_prefix')->value('value') ?? 'COT';
+
+            // Get and increment the counter from system configuration
+            $counterConfig = SystemConfiguration::where('key', 'quote_number_counter')
                 ->lockForUpdate() // Important for concurrency
                 ->first();
 
-            if ($lastQuote) {
-                // Extract the numeric part from the last quote number
-                $lastNumber = (int) str_replace($prefix, '', $lastQuote->quote_number);
-                $newNumber = $lastNumber + 1;
-            } else {
-                // If no quote exists for this year, start with 1
-                $newNumber = 1;
+            if (!$counterConfig) {
+                // If configuration doesn't exist, create it with default value
+                $counterConfig = SystemConfiguration::create([
+                    'key' => 'quote_number_counter',
+                    'value' => '401',
+                    'type' => 'integer',
+                    'description' => 'Contador actual para números de cotizaciones',
+                    'is_editable' => true,
+                    'group_name' => 'numbering',
+                ]);
             }
 
-            // Format the new number with leading zeros (e.g., 0001)
-            return $prefix . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+            $currentNumber = (int) $counterConfig->value;
+            $nextNumber = $currentNumber + 1;
+
+            // Update the counter in system configuration
+            $counterConfig->update(['value' => (string) $nextNumber]);
+
+            // Return the formatted quote number
+            return $prefix . '-' . $currentNumber;
         });
     }
 

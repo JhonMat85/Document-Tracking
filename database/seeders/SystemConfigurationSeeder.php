@@ -101,7 +101,7 @@ NRO. 193-2426603-0-40',
             ],
             [
                 'key' => 'quote_number_counter',
-                'value' => '1',
+                'value' => '401',
                 'type' => 'integer',
                 'description' => 'Contador actual para números de cotizaciones',
                 'is_editable' => true,
