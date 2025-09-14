@@ -221,7 +221,7 @@ class ClientResource extends Resource
                                                     ->collapsible()
                                                     ->defaultItems(1)
                                                     ->minItems(1)
-                                                    ->maxItems(2)
+                                                    ->maxItems(4)
                                                     ->itemLabel(fn (array $state): ?string => $state['full_name'] ?? null)
                                             ])
                                             ->collapsible()
