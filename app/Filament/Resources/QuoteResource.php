@@ -197,33 +197,31 @@ class QuoteResource extends Resource
                 $service = (array) $service;
             }
 
-            $qty = (float)($service['quantity'] ?? 0);
+            // Como ya no usamos cantidad, el precio unitario es el precio total del servicio
             $price = (float)($service['unit_price'] ?? 0);
-            $subtotal_service = $qty * $price;
-            $total += $subtotal_service;
+            $total += $price; // Suma directa del precio total (ya incluye IGV)
 
             Log::info("📊 SERVICIO #{$index} CALCULADO", [
-                'quantity' => $qty,
                 'unit_price' => $price,
-                'service_subtotal' => $subtotal_service,
                 'running_total' => $total
             ]);
         }
 
-        Log::info('💰 SUBTOTAL CALCULADO', [
+        Log::info('💰 TOTAL CALCULADO (incluye IGV)', [
             'total_before_format' => $total,
             'total_formatted' => number_format($total, 2, '.', '')
         ]);
 
         // Actualizar campos usando navegación hacia el formulario padre
+        // Subtotal será igual al total ya que incluye IGV
         $set('../../subtotal', number_format($total, 2, '.', ''));
 
-        // Recalcular impuestos
+        // No calcular IGV adicional - el precio ya lo incluye
         $taxRate = (float)($get('../../tax_percentage') ?? 18);
-        $tax = $total * $taxRate / 100;
-        $finalTotal = $total + $tax;
+        $tax = 0; // No hay IGV adicional que calcular
+        $finalTotal = $total; // El total es el precio final
 
-        Log::info('🧾 IMPUESTOS CALCULADOS', [
+        Log::info('🧾 SIN CÁLCULO DE IMPUESTOS ADICIONALES', [
             'tax_rate' => $taxRate,
             'tax_amount' => $tax,
             'final_total' => $finalTotal
@@ -232,7 +230,7 @@ class QuoteResource extends Resource
         $set('../../tax_amount', number_format($tax, 2, '.', ''));
         $set('../../total', number_format($finalTotal, 2, '.', ''));
 
-        Log::info('✅ CÁLCULO COMPLETADO - Campos actualizados', [
+        Log::info('✅ CÁLCULO COMPLETADO - Precio total incluye IGV', [
             'subtotal_set' => number_format($total, 2, '.', ''),
             'tax_amount_set' => number_format($tax, 2, '.', ''),
             'total_set' => number_format($finalTotal, 2, '.', '')
@@ -329,21 +327,27 @@ class QuoteResource extends Resource
 
                                                                 // Pre-cargar descripción del servicio en el primer elemento del repeater details
                                                                 if ($request->service_description) {
+                                                                    Log::info('🔄 PRECARGANDO DESCRIPCIÓN DEL SERVICIO', [
+                                                                        'service_description' => $request->service_description
+                                                                    ]);
+
                                                                     $currentDetails = $get('details') ?? [];
-                                                                    if (empty($currentDetails)) {
-                                                                        // Si no hay servicios, crear uno con la descripción
-                                                                        $set('details', [[
-                                                                            'item_description' => $request->service_description,
-                                                                            'quantity' => 1,
-                                                                            'unit_price' => 0,
-                                                                            'unit_of_measure' => 'UNIT',
-                                                                            'item_order' => 1
-                                                                        ]]);
-                                                                    } else {
-                                                                        // Si ya hay servicios, actualizar la descripción del primer servicio
-                                                                        $currentDetails[0]['item_description'] = $request->service_description;
-                                                                        $set('details', $currentDetails);
-                                                                    }
+
+                                                                    // Siempre crear un nuevo servicio con la descripción de la solicitud
+                                                                    // Esto asegura que se reemplace cualquier contenido existente
+                                                                    Log::info('📝 Creando/reemplazando servicio con descripción precargada');
+                                                                    $set('details', [[
+                                                                        'item_description' => $request->service_description,
+                                                                        'quantity' => 1,
+                                                                        'unit_price' => 0,
+                                                                        'unit_of_measure' => 'SERVICIO',
+                                                                        'item_order' => 1,
+                                                                        'item_notes' => $currentDetails[0]['item_notes'] ?? '' // Preservar notas si existen
+                                                                    ]]);
+
+                                                                    Log::info('✅ DESCRIPCIÓN PRECARGADA COMPLETADA', [
+                                                                        'final_details' => $get('details')
+                                                                    ]);
                                                                 }
                                                             }
                                                         } else {
@@ -573,7 +577,7 @@ class QuoteResource extends Resource
                                     ->icon('heroicon-o-shopping-bag')
                                     ->schema([
                                         Forms\Components\Repeater::make('details')
-                                            ->label('📋 Servicios')
+                                            ->label('🧮 Servicios')
                                             ->relationship('details') // Especificar explícitamente el nombre de la relación
                                             ->live()
                                             ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
@@ -586,80 +590,106 @@ class QuoteResource extends Resource
                                                 self::calculateAndUpdateTotals($set, $get, $component);
                                             })
                                             ->schema([
-                                                Grid::make(4)
+                                                // Información del Servicio
+                                                Section::make('Información del Servicio')
+                                                    ->description('Detalles básicos del servicio')
+                                                    ->icon('heroicon-o-document-text')
                                                     ->schema([
-                                                        Forms\Components\TextInput::make('item_order')
-                                                            ->label('📊 Orden')
-                                                            ->numeric()
-                                                            ->default(1)
+                                                        Forms\Components\Textarea::make('item_description')
+                                                            ->label('📝 Servicio')
                                                             ->required()
-                                                            ->minValue(1)
-                                                            ->columnSpan(1),
+                                                            ->rows(3)
+                                                            ->placeholder('Describe el servicio que se va a realizar...')
+                                                            ->columnSpanFull()
+                                                            ->live(onBlur: true),
 
+                                                        // Campo oculto para cantidad (siempre será 1)
                                                         Forms\Components\TextInput::make('quantity')
-                                                            ->label('🔢 Cantidad')
+                                                            ->label('Cantidad')
                                                             ->numeric()
                                                             ->default(1)
-                                                            ->required()
-                                                            ->minValue(1)
-                                                            ->columnSpan(1)
-                                                            ->live(onBlur: true)
-                                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
-                                                                Log::info('🔢 QUANTITY UPDATED - Inicio del cálculo', [
-                                                                    'quantity_updated' => $state,
-                                                                    'timestamp' => now()
-                                                                ]);
-                                                                
-                                                                                                                                // Llamar al método centralizado de cálculo
-                                                                self::calculateAndUpdateTotals($set, $get, $component);
-                                                            }),
+                                                            ->dehydrated(false) // No se guarda en BD
+                                                            ->hidden(), // No se muestra en UI
 
-                                                        Forms\Components\Select::make('unit_of_measure')
-                                                            ->label('📏 Unidad')
-                                                            ->options([
-                                                                'UNIT' => 'Unidad',
-                                                                'KG' => 'Kilogramo',
-                                                                'LITER' => 'Litro',
-                                                                'METER' => 'Metro',
-                                                                'HOUR' => 'Hora',
-                                                                'DAY' => 'Día',
-                                                                'BOX' => 'Caja',
-                                                                'PACKAGE' => 'Paquete',
-                                                            ])
-                                                            ->default('UNIT')
-                                                            ->required()
-                                                            ->columnSpan(1),
-
-                                                        Forms\Components\TextInput::make('unit_price')
-                                                            ->label('💰 Precio Unitario')
+                                                        // Campo oculto para orden
+                                                        Forms\Components\TextInput::make('item_order')
+                                                            ->label('Orden')
                                                             ->numeric()
-                                                            ->prefix('S/')
-                                                            ->step(0.01)
-                                                            ->columnSpan(1)
-                                                            ->live(onBlur: true)
-                                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
-                                                                Log::info('💰 UNIT_PRICE UPDATED - Inicio del cálculo', [
-                                                                    'unit_price_updated' => $state,
-                                                                    'timestamp' => now()
-                                                                ]);
-                                                                
-                                                                                                                                // Llamar al método centralizado de cálculo
-                                                                self::calculateAndUpdateTotals($set, $get, $component);
-                                                            }),
+                                                            ->default(1)
+                                                            ->dehydrated(false) // No se guarda en BD
+                                                            ->hidden(), // No se muestra en UI
+
+                                                        // Campo oculto para unidad (siempre será SERVICIO)
+                                                        Forms\Components\Hidden::make('unit_of_measure')
+                                                            ->default('SERVICIO'),
                                                     ]),
 
-                                                Forms\Components\Textarea::make('item_description')
-                                                    ->label('📝 Descripción del Servicio')
-                                                    ->required()
-                                                    ->rows(3)
-                                                    ->placeholder('Describe el servicio...')
-                                                    ->columnSpanFull(),
+                                                // Información del Precio y Pago
+                                                Section::make('Información del Precio y Pago')
+                                                    ->description('Precio total y condiciones de pago')
+                                                    ->icon('heroicon-o-currency-dollar')
+                                                    ->schema([
+                                                        Grid::make(2)
+                                                            ->schema([
+                                                                Forms\Components\TextInput::make('unit_price')
+                                                                    ->label('💰 Precio Total')
+                                                                    ->numeric()
+                                                                    ->prefix('S/')
+                                                                    ->step(0.01)
+                                                                    ->required()
+                                                                    ->placeholder('Ingrese el precio total del servicio')
+                                                                    ->helperText('Monto total del servicio (incluye IGV)')
+                                                                    ->columnSpan(1)
+                                                                    ->live(onBlur: true)
+                                                                    ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
+                                                                        Log::info('💰 UNIT_PRICE UPDATED - Inicio del cálculo', [
+                                                                            'unit_price_updated' => $state,
+                                                                            'timestamp' => now()
+                                                                        ]);
 
-                                                Forms\Components\Textarea::make('item_notes')
-                                                    ->label('📋 Notas del Servicio')
-                                                    ->rows(2)
-                                                    ->placeholder('Notas adicionales para este servicio...')
-                                                    ->columnSpanFull(),
+                                                                        // Llamar al método centralizado de cálculo
+                                                                        self::calculateAndUpdateTotals($set, $get, $component);
+                                                                    }),
+
+                                                                Forms\Components\Select::make('currency')
+                                                                    ->label('💱 Moneda')
+                                                                    ->options([
+                                                                        'PEN' => 'Soles (PEN)',
+                                                                        'USD' => 'Dólares (USD)',
+                                                                    ])
+                                                                    ->default('PEN')
+                                                                    ->required()
+                                                                    ->helperText('Moneda utilizada en la cotización')
+                                                                    ->columnSpan(1),
+                                                            ]),
+
+                                                        Forms\Components\Select::make('proposed_payment_method')
+                                                            ->label('💳 Método de Pago')
+                                                            ->options([
+                                                                'factoring' => 'Factoring',
+                                                                'direct_payment' => 'Pago Directo',
+                                                                'cash' => 'Contado',
+                                                                'others' => 'Otros',
+                                                            ])
+                                                            ->default('factoring')
+                                                            ->required()
+                                                            ->helperText('Forma de pago propuesta')
+                                                            ->columnSpanFull(),
+                                                    ]),
+
+                                                // Notas adicionales (opcional)
+                                                Section::make('Información Adicional')
+                                                    ->description('Notas adicionales del servicio')
+                                                    ->icon('heroicon-o-chat-bubble-left-right')
+                                                    ->collapsible()
+                                                    ->collapsed()
+                                                    ->schema([
+                                                        Forms\Components\Textarea::make('item_notes')
+                                                            ->label('📋 Notas del Servicio')
+                                                            ->rows(2)
+                                                            ->placeholder('Notas adicionales para este servicio...')
+                                                            ->columnSpanFull(),
+                                                    ]),
                                             ])
                                             ->orderColumn('item_order')
                                             ->reorderable()
@@ -673,109 +703,85 @@ class QuoteResource extends Resource
                                     ]),
                             ]),
 
-                        Tab::make('💰 Montos')
+                        Tab::make('💰 Resumen Financiero')
                             ->icon('heroicon-o-currency-dollar')
                             ->schema([
-                                Section::make('Cálculo de Montos')
-                                    ->description('Desglose financiero automático')
+                                Section::make('Resumen de la Cotización')
+                                    ->description('Vista general de montos calculados')
                                     ->icon('heroicon-o-calculator')
                                     ->schema([
                                         Grid::make(3)
                                             ->schema([
                                                 Forms\Components\TextInput::make('subtotal')
-                                                    ->label('🧮 Subtotal')
+                                                    ->label('🧮 Subtotal Calculado')
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Calculado automáticamente desde los servicios')
+                                                    ->helperText('Subtotal de todos los servicios')
                                                     ->columnSpan(1)
                                                     ->default(0)
+                                                    ->readOnly()
                                                     ->live(),
 
                                                 Forms\Components\TextInput::make('tax_percentage')
-                                                    ->label('📈 Impuesto (%)')
+                                                    ->label('📈 IGV Aplicado (%)')
                                                     ->numeric()
                                                     ->default(18.00)
                                                     ->suffix('%')
                                                     ->required()
-                                                    ->helperText('Porcentaje de impuesto aplicable')
+                                                    ->helperText('Porcentaje de IGV incluido en precios')
                                                     ->columnSpan(1)
-                                                    ->live(onBlur: true)
-                                                    ->afterStateUpdated(function (Set $set, Get $get, $state) {
-                                                        Log::info('📈 TAX_PERCENTAGE UPDATED - Inicio recalculo', [
-                                                            'tax_percentage_updated' => $state,
-                                                            'timestamp' => now()
-                                                        ]);
-                                                        
-                                                        $subtotal = (float) ($get('subtotal') ?? 0);
-                                                        $taxPercentage = $get('tax_percentage') ?? 18;
-                                                        
-                                                        Log::info('📊 VALORES OBTENIDOS PARA RECALCULO', [
-                                                            'subtotal_from_form' => $subtotal,
-                                                            'tax_percentage_from_form' => $taxPercentage
-                                                        ]);
-                                                        
-                                                        $taxAmount = $subtotal * $taxPercentage / 100;
-                                                        $total = $subtotal + $taxAmount;
-                                                        
-                                                        Log::info('🧾 RECALCULO DE IMPUESTOS COMPLETADO', [
-                                                            'tax_amount_calculated' => $taxAmount,
-                                                            'new_total' => $total,
-                                                            'tax_amount_formatted' => number_format($taxAmount, 2, '.', ''),
-                                                            'total_formatted' => number_format($total, 2, '.', '')
-                                                        ]);
-                                                        
-                                                        $set('tax_amount', number_format($taxAmount, 2, '.', ''));
-                                                        $set('total', number_format($total, 2, '.', ''));
-                                                        
-                                                        Log::info('✅ RECALCULO COMPLETADO - Campos de impuestos actualizados');
-                                                    }),
+                                                    ->readOnly()
+                                                    ->dehydrated(true), // Mantener el valor pero no permitir edición
 
                                                 Forms\Components\TextInput::make('tax_amount')
-                                                    ->label('🧾 Monto Impuesto')
+                                                    ->label('🧾 IGV Incluido')
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Calculado automáticamente')
+                                                    ->helperText('IGV ya incluido en los precios')
                                                     ->columnSpan(1)
                                                     ->default(0)
                                                     ->readOnly(),
                                             ]),
 
-                                        Grid::make(3)
+                                        Grid::make(2)
                                             ->schema([
                                                 Forms\Components\TextInput::make('total')
-                                                    ->label('💰 Total')
+                                                    ->label('💰 Total General')
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Monto total calculado automáticamente')
+                                                    ->helperText('Monto total de la cotización')
                                                     ->columnSpan(1)
                                                     ->default(0)
                                                     ->readOnly(),
-                                                Forms\Components\Select::make('currency')
-                                                    ->label('💱 Moneda')
-                                                    ->options([
-                                                        'PEN' => 'Soles (PEN)',
-                                                        'USD' => 'Dólares (USD)',
-                                                    ])
-                                                    ->default('PEN')
-                                                    ->required()
-                                                    ->helperText('Moneda utilizada en la cotización')
-                                                    ->columnSpan(1),
 
-                                                Forms\Components\Select::make('proposed_payment_method')
-                                                    ->label('💳 Método de Pago')
-                                                    ->options([
-                                                        'factoring' => 'Factoring',
-                                                        'direct_payment' => 'Pago Directo',
-                                                        'cash' => 'Contado',
-                                                        'others' => 'Otros',
+                                                Section::make('Información Adicional')
+                                                    ->description('Detalles de pago y moneda')
+                                                    ->icon('heroicon-o-information-circle')
+                                                    ->schema([
+                                                        Forms\Components\Placeholder::make('payment_info')
+                                                            ->label('Información de Pago')
+                                                            ->content(function (Get $get) {
+                                                                $currency = $get('currency') ?: 'PEN';
+                                                                $paymentMethod = $get('proposed_payment_method') ?: 'factoring';
+
+                                                                $currencyText = $currency === 'PEN' ? 'Soles (PEN)' : 'Dólares (USD)';
+                                                                $paymentText = match($paymentMethod) {
+                                                                    'factoring' => 'Factoring',
+                                                                    'direct_payment' => 'Pago Directo',
+                                                                    'cash' => 'Contado',
+                                                                    'others' => 'Otros',
+                                                                    default => 'No especificado'
+                                                                };
+
+                                                                return "Moneda: {$currencyText}\nMétodo de Pago: {$paymentText}";
+                                                            })
+                                                            ->columnSpanFull(),
                                                     ])
-                                                    ->default('factoring')
-                                                    ->required()
-                                                    ->helperText('Forma de pago propuesta')
-                                                    ->columnSpan(1),
+                                                    ->columnSpan(1)
+                                                    ->collapsed(false),
                                             ]),
                                     ]),
                             ]),
