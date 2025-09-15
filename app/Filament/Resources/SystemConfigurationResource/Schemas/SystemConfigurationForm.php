@@ -68,7 +68,7 @@ class SystemConfigurationForm
                     ->label('Descripción')
                     ->required(),
 
-                // Campo especial para logo de la empresa
+                // FUNCIONALIDAD DE CARGA DE LOGO - Sube y guarda logos de empresa en storage/app/public/logos/
                 FileUpload::make('logo_upload')
                     ->label('Logo de la Empresa')
                     ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/gif'])
