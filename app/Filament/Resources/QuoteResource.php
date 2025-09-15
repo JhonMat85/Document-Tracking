@@ -18,6 +18,8 @@ use Filament\Actions\ActionGroup;
 use Filament\Tables\Columns\Layout\Split;
 use Filament\Tables\Columns\Layout\Stack;
 use Filament\Forms;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -34,6 +36,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class QuoteResource extends Resource
 {
@@ -296,15 +299,60 @@ class QuoteResource extends Resource
                                                     ->afterStateUpdated(function (Set $set, Get $get) {
                                                         // Get the selected request ID
                                                         $requestId = $get('request_id');
-                                                        
+
                                                         if ($requestId) {
                                                             // Load the request model
                                                             $request = \App\Models\Request::find($requestId);
-                                                            
-                                                            if ($request && $request->contact_id) {
+
+                                                            if ($request) {
                                                                 // Set the destination_contact_id to the request's contact
-                                                                $set('destination_contact_id', $request->contact_id);
+                                                                if ($request->contact_id) {
+                                                                    $set('destination_contact_id', $request->contact_id);
+                                                                }
+
+                                                                // Pre-cargar descripción del servicio en pestaña Servicio
+                                                                if ($request->service_description) {
+                                                                    $set('service_description', $request->service_description);
+                                                                }
+
+                                                                // Pre-cargar fecha de inicio (service_start_date) desde required_service_date
+                                                                if ($request->required_service_date) {
+                                                                    $formattedDate = Carbon::parse($request->required_service_date)->format('Y-m-d H:i:s');
+                                                                    $set('service_start_date', $formattedDate);
+                                                                }
+
+                                                                // Calcular fecha de vencimiento (expiration_date) como request_date + 15 días
+                                                                if ($request->request_date) {
+                                                                    $expirationDate = Carbon::parse($request->request_date)->addDays(15);
+                                                                    $set('expiration_date', $expirationDate->format('Y-m-d H:i:s'));
+                                                                }
+
+                                                                // Pre-cargar descripción del servicio en el primer elemento del repeater details
+                                                                if ($request->service_description) {
+                                                                    $currentDetails = $get('details') ?? [];
+                                                                    if (empty($currentDetails)) {
+                                                                        // Si no hay servicios, crear uno con la descripción
+                                                                        $set('details', [[
+                                                                            'item_description' => $request->service_description,
+                                                                            'quantity' => 1,
+                                                                            'unit_price' => 0,
+                                                                            'unit_of_measure' => 'UNIT',
+                                                                            'item_order' => 1
+                                                                        ]]);
+                                                                    } else {
+                                                                        // Si ya hay servicios, actualizar la descripción del primer servicio
+                                                                        $currentDetails[0]['item_description'] = $request->service_description;
+                                                                        $set('details', $currentDetails);
+                                                                    }
+                                                                }
                                                             }
+                                                        } else {
+                                                            // Limpiar campos cuando no hay solicitud seleccionada
+                                                            $set('destination_contact_id', null);
+                                                            $set('service_description', null);
+                                                            $set('service_start_date', null);
+                                                            $set('expiration_date', null);
+                                                            $set('details', []);
                                                         }
                                                     })
                                                     ->helperText('Solicitud asociada a esta cotización')
@@ -410,6 +458,15 @@ class QuoteResource extends Resource
                                             ->rows(4)
                                             ->placeholder('Describe el servicio...')
                                             ->helperText('Descripción clara del servicio')
+                                            ->afterStateHydrated(function (Textarea $component, $state, $record, Get $get) {
+                                                $requestId = $get('request_id');
+                                                if ($requestId && !$state) {
+                                                    $request = \App\Models\Request::find($requestId);
+                                                    if ($request && $request->service_description) {
+                                                        $component->state($request->service_description);
+                                                    }
+                                                }
+                                            })
                                             ->columnSpanFull(),
                                     ]),
 
@@ -452,6 +509,16 @@ class QuoteResource extends Resource
                                                     ->label('🏁 Inicio')
                                                     ->required()
                                                     ->helperText('Fecha y hora de inicio')
+                                                    ->live()
+                                                    ->afterStateHydrated(function (DateTimePicker $component, $state, $record, Get $get) {
+                                                        $requestId = $get('request_id');
+                                                        if ($requestId && !$state) {
+                                                            $request = \App\Models\Request::find($requestId);
+                                                            if ($request && $request->required_service_date) {
+                                                                $component->state(Carbon::parse($request->required_service_date)->format('Y-m-d H:i:s'));
+                                                            }
+                                                        }
+                                                    })
                                                     ->columnSpan(1),
 
                                                 Forms\Components\DateTimePicker::make('service_end_date')
@@ -482,6 +549,17 @@ class QuoteResource extends Resource
                                                 Forms\Components\DateTimePicker::make('expiration_date')
                                                     ->label('⏰ Vencimiento')
                                                     ->helperText('Fecha límite de aceptación')
+                                                    ->live()
+                                                    ->afterStateHydrated(function (DateTimePicker $component, $state, $record, Get $get) {
+                                                        $requestId = $get('request_id');
+                                                        if ($requestId && !$state) {
+                                                            $request = \App\Models\Request::find($requestId);
+                                                            if ($request && $request->request_date) {
+                                                                $expirationDate = Carbon::parse($request->request_date)->addDays(15);
+                                                                $component->state($expirationDate->format('Y-m-d H:i:s'));
+                                                            }
+                                                        }
+                                                    })
                                                     ->columnSpan(1),
                                             ]),
                                     ]),
@@ -588,7 +666,7 @@ class QuoteResource extends Resource
                                             ->collapsible()
                                             ->cloneable()
                                             ->addActionLabel('➕ Agregar')
-                                            ->defaultItems(1)
+                                            ->defaultItems(0)
                                             ->minItems(1)
                                             ->maxItems(20)
                                             ->columnSpanFull(),
