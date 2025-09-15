@@ -580,14 +580,39 @@ class QuoteResource extends Resource
                                             ->label('🧮 Servicios')
                                             ->relationship('details') // Especificar explícitamente el nombre de la relación
                                             ->live()
+                                            ->reactive()
                                             ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
-                                                Log::info('🔄 REPEATER UPDATED - Cambio detectado en servicios', [
+                                                Log::info('🔄 REPEATER UPDATED - Actualizando cálculos', [
                                                     'total_servicios' => count($state ?? []),
                                                     'timestamp' => now()
                                                 ]);
 
-                                                // Llamar al método centralizado de cálculo
-                                                self::calculateAndUpdateTotals($set, $get, $component);
+                                                // Calcular total desde los servicios
+                                                $total = 0;
+                                                if (is_array($state)) {
+                                                    foreach ($state as $service) {
+                                                        if (is_array($service)) {
+                                                            $unitPrice = (float)($service['unit_price'] ?? 0);
+                                                            $total += $unitPrice;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Calcular IGV inverso
+                                                $igvRate = 0.18;
+                                                $subtotal = $total > 0 ? $total / (1 + $igvRate) : 0;
+                                                $igvIncluido = $total - $subtotal;
+
+                                                // Actualizar campos de resumen
+                                                $set('total', number_format($total, 2, '.', ''));
+                                                $set('subtotal', number_format($subtotal, 2, '.', ''));
+                                                $set('tax_amount', number_format($igvIncluido, 2, '.', ''));
+
+                                                Log::info('✅ CÁLCULOS ACTUALIZADOS', [
+                                                    'total' => $total,
+                                                    'subtotal' => $subtotal,
+                                                    'igv_incluido' => $igvIncluido
+                                                ]);
                                             })
                                             ->schema([
                                                 // Información del Servicio
@@ -608,7 +633,7 @@ class QuoteResource extends Resource
                                                             ->label('Cantidad')
                                                             ->numeric()
                                                             ->default(1)
-                                                            ->dehydrated(false) // No se guarda en BD
+                                                            ->dehydrated(true) // Se guarda en BD con valor por defecto
                                                             ->hidden(), // No se muestra en UI
 
                                                         // Campo oculto para orden
@@ -616,7 +641,7 @@ class QuoteResource extends Resource
                                                             ->label('Orden')
                                                             ->numeric()
                                                             ->default(1)
-                                                            ->dehydrated(false) // No se guarda en BD
+                                                            ->dehydrated(true) // Se guarda en BD con valor por defecto
                                                             ->hidden(), // No se muestra en UI
 
                                                         // Campo oculto para unidad (siempre será SERVICIO)
@@ -641,15 +666,15 @@ class QuoteResource extends Resource
                                                                     ->helperText('Monto total del servicio (incluye IGV)')
                                                                     ->columnSpan(1)
                                                                     ->live(onBlur: true)
-                                                                    ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
-                                                                        Log::info('💰 UNIT_PRICE UPDATED - Inicio del cálculo', [
-                                                                            'unit_price_updated' => $state,
-                                                                            'timestamp' => now()
-                                                                        ]);
+                                                            ->afterStateUpdated(function (Set $set, Get $get, $state, $component) {
+                                                                Log::info('💰 UNIT_PRICE UPDATED - SOLO LOG', [
+                                                                    'unit_price_updated' => $state,
+                                                                    'timestamp' => now()
+                                                                ]);
 
-                                                                        // Llamar al método centralizado de cálculo
-                                                                        self::calculateAndUpdateTotals($set, $get, $component);
-                                                                    }),
+                                                                // Los campos de resumen serán reactivos automáticamente
+                                                                // No necesitamos actualizar manualmente aquí
+                                                            }),
 
                                                                 Forms\Components\Select::make('currency')
                                                                     ->label('💱 Moneda')
@@ -717,7 +742,7 @@ class QuoteResource extends Resource
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Subtotal de todos los servicios')
+                                                    ->helperText('Subtotal calculado aplicando IGV inverso')
                                                     ->columnSpan(1)
                                                     ->default(0)
                                                     ->readOnly()
@@ -739,10 +764,11 @@ class QuoteResource extends Resource
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('IGV ya incluido en los precios')
+                                                    ->helperText('IGV calculado: Total General - Subtotal')
                                                     ->columnSpan(1)
                                                     ->default(0)
-                                                    ->readOnly(),
+                                                    ->readOnly()
+                                                    ->live(),
                                             ]),
 
                                         Grid::make(2)
@@ -752,10 +778,11 @@ class QuoteResource extends Resource
                                                     ->numeric()
                                                     ->prefix('S/')
                                                     ->required()
-                                                    ->helperText('Monto total de la cotización')
+                                                    ->helperText('Toma el valor del Precio Total de Servicios')
                                                     ->columnSpan(1)
                                                     ->default(0)
-                                                    ->readOnly(),
+                                                    ->readOnly()
+                                                    ->live(),
 
                                                 Section::make('Información Adicional')
                                                     ->description('Detalles de pago y moneda')
