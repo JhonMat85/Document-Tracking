@@ -73,38 +73,17 @@ class SystemConfigurationForm
                     ->label('Logo de la Empresa')
                     ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/gif'])
                     ->maxSize(2048) // 2MB
+                    ->disk('public')
                     ->directory('logos')
                     ->visibility('public')
                     ->imagePreviewHeight('150')
-                    ->helperText('Logo que se mostrará en las cotizaciones (JPG, PNG, GIF - máx. 2MB). La ruta se guarda automáticamente.')
+                    ->helperText('Logo que se mostrará en las cotizaciones (JPG, JPEG, PNG, GIF - máx. 2MB). La ruta se guarda automáticamente.')
                     ->columnSpanFull()
                     ->visible(fn ($get) => $get('key') === 'company_logo')
-                    ->afterStateUpdated(function ($state, $set, $get) {
-                        Log::info('LOGO UPLOAD DEBUG - afterStateUpdated called', [
-                            'state_type' => gettype($state),
-                            'state_value' => $state,
-                            'state_empty' => empty($state),
-                            'timestamp' => now()
-                        ]);
-
-                        if ($state && !empty($state)) {
-                            // Cuando se sube un archivo, actualizar el campo value con la ruta
-                            // FileUpload puede devolver un string (un archivo) o array (múltiples)
-                            $filePath = is_array($state) ? $state[0] : $state;
-
-                            Log::info('LOGO UPLOAD DEBUG - File path extracted', [
-                                'file_path' => $filePath,
-                                'is_array' => is_array($state),
-                                'array_count' => is_array($state) ? count($state) : 'N/A'
-                            ]);
-
-                            $set('value', $filePath);
-                        } elseif (empty($state)) {
-                            // Cuando se elimina el archivo, limpiar el campo value
-                            Log::info('LOGO UPLOAD DEBUG - File removed, clearing value');
-                            $set('value', '');
-                        }
-                    }),
+                    ->storeFiles(true)
+                    ->validationMessages([
+                        'mimetypes' => 'El archivo debe ser una imagen válida. Formatos permitidos: JPEG, PNG, GIF.',
+                    ]),
 
                 // Campo especial para información bancaria
                 Textarea::make('bank_info_input')

@@ -69,4 +69,46 @@ class EditSystemConfiguration extends EditRecord
 
         return $data;
     }
+
+    protected function afterSave(): void
+    {
+        // Manejar el guardado del logo después de que Filament procese el archivo
+        $rawState = $this->form->getRawState();
+        $logoUpload = $rawState['logo_upload'] ?? null;
+        
+        Log::info('EDIT SYSTEM CONFIG DEBUG - afterSave called', [
+            'record_key' => $this->record->key,
+            'has_logo_upload' => !empty($logoUpload),
+            'logo_upload_value' => $logoUpload,
+            'logo_upload_type' => gettype($logoUpload)
+        ]);
+        
+        if ($this->record->key === 'company_logo' && !empty($logoUpload)) {
+            // Filament ya guardó el archivo, ahora actualizar el campo value
+            $filePath = null;
+            
+            if (is_array($logoUpload) && count($logoUpload) > 0) {
+                // Obtener el primer valor del array (puede tener claves UUID)
+                $filePath = reset($logoUpload);
+            } elseif (is_string($logoUpload)) {
+                $filePath = $logoUpload;
+            }
+            
+            Log::info('EDIT SYSTEM CONFIG DEBUG - Processing logo file', [
+                'file_path' => $filePath,
+                'is_string' => is_string($filePath),
+                'file_exists' => is_string($filePath) && \Illuminate\Support\Facades\Storage::disk('public')->exists($filePath)
+            ]);
+            
+            // Actualizar el campo value con la ruta del archivo
+            if (is_string($filePath) && !empty($filePath)) {
+                $this->record->update(['value' => $filePath]);
+                
+                Log::info('EDIT SYSTEM CONFIG DEBUG - Logo value updated', [
+                    'final_path' => $filePath,
+                    'record_value' => $this->record->fresh()->value
+                ]);
+            }
+        }
+    }
 }

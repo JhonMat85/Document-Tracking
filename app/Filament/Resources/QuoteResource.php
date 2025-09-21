@@ -629,24 +629,19 @@ class QuoteResource extends Resource
                                                             ->live(onBlur: true),
 
                                                         // Campo oculto para cantidad (siempre será 1)
-                                                        Forms\Components\TextInput::make('quantity')
-                                                            ->label('Cantidad')
-                                                            ->numeric()
-                                                            ->default(1)
-                                                            ->dehydrated(true) // Se guarda en BD con valor por defecto
-                                                            ->hidden(), // No se muestra en UI
+                                        Forms\Components\Hidden::make('quantity')
+                                            ->default(1)
+                                            ->dehydrated(true), // Se guarda en BD con valor por defecto
 
                                                         // Campo oculto para orden
-                                                        Forms\Components\TextInput::make('item_order')
-                                                            ->label('Orden')
-                                                            ->numeric()
-                                                            ->default(1)
-                                                            ->dehydrated(true) // Se guarda en BD con valor por defecto
-                                                            ->hidden(), // No se muestra en UI
+                                        Forms\Components\Hidden::make('item_order')
+                                            ->default(1)
+                                            ->dehydrated(true), // Se guarda en BD con valor por defecto
 
                                                         // Campo oculto para unidad (siempre será SERVICIO)
-                                                        Forms\Components\Hidden::make('unit_of_measure')
-                                                            ->default('SERVICIO'),
+                                        Forms\Components\Hidden::make('unit_of_measure')
+                                            ->default('SERVICIO')
+                                            ->dehydrated(true), // Se guarda en BD con valor por defecto
                                                     ]),
 
                                                 // Información del Precio y Pago
